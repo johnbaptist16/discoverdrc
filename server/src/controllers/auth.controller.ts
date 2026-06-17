@@ -28,9 +28,8 @@ export async function register(req: Request, res: Response) {
 
     const user = result.rows[0];
     const token = jwt.sign(
-      { userId: user.id, role: user.role },
-      process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
+      { userId: user.id, role: user.role, exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60 },
+      process.env.JWT_SECRET as string
     );
 
     res.status(201).json({ token, user });
@@ -67,9 +66,8 @@ export async function login(req: Request, res: Response) {
     }
 
     const token = jwt.sign(
-      { userId: user.id, role: user.role },
-      process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
+      { userId: user.id, role: user.role, exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60 },
+      process.env.JWT_SECRET as string
     );
 
     const { password_hash: _, ...safeUser } = user;
