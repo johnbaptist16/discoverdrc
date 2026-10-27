@@ -1,4 +1,6 @@
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -19,10 +21,15 @@ const isProd = process.env.NODE_ENV === 'production';
 // Trust Railway / Render reverse proxy so rate-limiting sees real client IPs
 if (isProd) app.set('trust proxy', 1);
 
-app.use(helmet());
+// CSP is off because the Expo web bundle served below needs its own scripts/styles.
+app.use(helmet({ contentSecurityPolicy: false }));
+
+// Extra allowed origins (comma-separated), e.g. a Render URL or a custom domain.
+const extraOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors({
   origin: isProd
-    ? ['https://discoverdrc.com', 'https://www.discoverdrc.com']
+    ? ['https://discoverdrc.com', 'https://www.discoverdrc.com', ...extraOrigins]
     : true,
 }));
 app.use(express.json());
@@ -53,6 +60,22 @@ app.use('/api/economy', economyRoutes);
 app.use('/api/devices', devicesRoutes);
 app.use('/api/favorites', favoritesRoutes);
 app.use('/admin', adminRoutes);
+
+// Web app (Expo static export) — served from the same address as the API,
+// so the web build can call /api with no CORS setup.
+const webDir = path.resolve(process.env.WEB_DIR ?? path.join(__dirname, '..', 'public'));
+if (fs.existsSync(webDir)) {
+  app.use(express.static(webDir, { extensions: ['html'] }));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
+    // Dynamic pages exported as [param].html, e.g. /business/42 → business/[id].html
+    const dynamic = path.join(webDir, 'business', '[id].html');
+    if (/^\/business\/[^/]+\/?$/.test(req.path) && fs.existsSync(dynamic)) {
+      return res.sendFile(dynamic);
+    }
+    res.sendFile(path.join(webDir, 'index.html'));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT} [${isProd ? 'production' : 'development'}]`);
